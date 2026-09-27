@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net.NetworkInformation;
 using Microsoft.Win32;
+using System.Diagnostics;
 namespace OpenFix;
 public enum FindingLevel { Good, Attention, Critical }
 public sealed record Finding(string Area, FindingLevel Level, string Title, string Explanation, string Evidence, bool CanRepair = false);
@@ -16,8 +17,23 @@ public static class OpenFixEngine
         findings.Add(NetworkInterface.GetIsNetworkAvailable() ? new Finding("Connectivity", FindingLevel.Good, "Network is available", "Windows reports an active network interface.", "NetworkInterface.GetIsNetworkAvailable() = true") : new Finding("Connectivity", FindingLevel.Attention, "No network is currently available", "This may be intentional if the device is offline.", "No active network interface reported"));
         var run = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"); var startupCount = run?.GetValueNames().Length ?? 0;
         findings.Add(new Finding("Startup", FindingLevel.Good, "Startup entries inventoried", "OpenFix found the current-user startup entries without changing them.", $"{startupCount} current-user entries"));
+        var activation = ReadActivationEvidence();
+        findings.Add(new Finding("Activation", activation.IsActivated ? FindingLevel.Good : FindingLevel.Attention, activation.IsActivated ? "Windows reports activation is valid" : "Windows activation needs review", activation.IsActivated ? "The official Windows licensing script reports an active license." : "OpenFix cannot activate Windows, but you can review the official status and troubleshoot it from Windows Settings.", activation.Evidence));
         findings.Add(new Finding("Safety", FindingLevel.Good, "Scan is read-only", "No settings, files, services, or registry values were changed.", "No repair actions were applied"));
         return findings;
+    }
+    private static (bool IsActivated, string Evidence) ReadActivationEvidence()
+    {
+        try
+        {
+            var info = new ProcessStartInfo { FileName = "cscript.exe", Arguments = $"//Nologo \"{Environment.SystemDirectory}\\slmgr.vbs\" /xpr", UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+            using var process = Process.Start(info); if (process is null) return (false, "Could not start the official Windows licensing script.");
+            if (!process.WaitForExit(4000)) { try { process.Kill(true); } catch { } return (false, "Activation status check timed out."); }
+            var output = (process.StandardOutput.ReadToEnd() + " " + process.StandardError.ReadToEnd()).Trim();
+            var active = output.Contains("permanently activated", StringComparison.OrdinalIgnoreCase) || output.Contains("permanently activated.", StringComparison.OrdinalIgnoreCase);
+            return (active, string.IsNullOrWhiteSpace(output) ? $"slmgr.vbs exited with code {process.ExitCode}" : output.Replace(Environment.NewLine, " "));
+        }
+        catch (Exception ex) { return (false, $"Activation status unavailable: {ex.Message}"); }
     }
     private static long SafeLength(string path) { try { return new FileInfo(path).Length; } catch { return 0; } }
 }
