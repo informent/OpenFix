@@ -1,0 +1,23 @@
+using System.IO;
+using System.Net.NetworkInformation;
+using Microsoft.Win32;
+namespace OpenFix;
+public enum FindingLevel { Good, Attention, Critical }
+public sealed record Finding(string Area, FindingLevel Level, string Title, string Explanation, string Evidence, bool CanRepair = false);
+public static class OpenFixEngine
+{
+    public static IReadOnlyList<Finding> Scan()
+    {
+        var findings = new List<Finding>();
+        var system = DriveInfo.GetDrives().FirstOrDefault(d => d.IsReady && string.Equals(d.Name, Path.GetPathRoot(Environment.SystemDirectory), StringComparison.OrdinalIgnoreCase));
+        if (system is not null) { var free = system.AvailableFreeSpace / 1_073_741_824d; findings.Add(free < 10 ? new Finding("Storage", FindingLevel.Attention, "Low system-drive space", "Windows may become unstable when the system drive is nearly full.", $"{free:0.0} GB available", true) : new Finding("Storage", FindingLevel.Good, "System-drive space is healthy", "There is enough free space for normal Windows operation.", $"{free:0.0} GB available")); }
+        var temp = Path.GetTempPath(); var tempBytes = Directory.Exists(temp) ? Directory.EnumerateFiles(temp, "*", SearchOption.AllDirectories).Select(SafeLength).Sum() : 0;
+        findings.Add(tempBytes > 5_000_000_000 ? new Finding("Storage", FindingLevel.Attention, "Temporary files are growing large", "Temporary files can be reviewed before cleanup. OpenFix will never delete them without an explicit preview.", $"{tempBytes / 1_073_741_824d:0.0} GB in the current temp tree", true) : new Finding("Storage", FindingLevel.Good, "Temporary-file footprint is reasonable", "No unusually large temporary-file footprint was detected.", $"{tempBytes / 1_048_576d:0.0} MB measured"));
+        findings.Add(NetworkInterface.GetIsNetworkAvailable() ? new Finding("Connectivity", FindingLevel.Good, "Network is available", "Windows reports an active network interface.", "NetworkInterface.GetIsNetworkAvailable() = true") : new Finding("Connectivity", FindingLevel.Attention, "No network is currently available", "This may be intentional if the device is offline.", "No active network interface reported"));
+        var run = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"); var startupCount = run?.GetValueNames().Length ?? 0;
+        findings.Add(new Finding("Startup", FindingLevel.Good, "Startup entries inventoried", "OpenFix found the current-user startup entries without changing them.", $"{startupCount} current-user entries"));
+        findings.Add(new Finding("Safety", FindingLevel.Good, "Scan is read-only", "No settings, files, services, or registry values were changed.", "No repair actions were applied"));
+        return findings;
+    }
+    private static long SafeLength(string path) { try { return new FileInfo(path).Length; } catch { return 0; } }
+}
