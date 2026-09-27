@@ -2,7 +2,7 @@
 
 OpenFix is a read-only-first Windows health and troubleshooting tool.
 
-It scans for useful evidence—system-drive space, temporary-file growth, network availability, startup inventory, and scan safety—then explains what it found in plain language. Reports can be exported for review or support.
+It scans for useful evidence: system-drive space, temporary-file growth, network availability, startup inventory, and scan safety. It then explains what it found in plain language. Reports can be exported for review or support.
 
 ## Activation
 
