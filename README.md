@@ -2,7 +2,11 @@
 
 OpenFix is a read-only-first Windows health and troubleshooting tool.
 
-It scans for useful evidence: system-drive space, temporary-file growth, network availability, startup inventory, and scan safety. It then explains what it found in plain language. Reports can be exported for review or support.
+It scans for useful evidence: system-drive space, temporary-file growth, network availability, startup inventory, activation status, and scan safety. It then explains what it found in plain language and calculates a transparent 0–100 health score.
+
+## Support bundles
+
+OpenFix 1.0 exports a self-contained ZIP for troubleshooting and handoff. Each bundle contains structured JSON, a standalone HTML report, a concise system summary, a privacy note, and a SHA-256 manifest. User-profile names and product-key-shaped values are redacted. OpenFix does not include file contents or make system changes while generating a bundle.
 
 ## Activation
 

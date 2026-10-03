@@ -1,5 +1,4 @@
 using System.IO;
-using System.Text.Json;
 using System.Windows;
 namespace OpenFix;
 public partial class MainWindow : Window
@@ -11,5 +10,15 @@ public partial class MainWindow : Window
     private void AddSettingsButton(System.Windows.Controls.Panel panel, string label, string uri) { var button = new System.Windows.Controls.Button { Content = label, ToolTip = "Open the official Windows settings page", Padding = new Thickness(10, 8, 10, 8) }; button.Click += (_, _) => OpenSettings(uri); panel.Children.Add(button); }
     private void OpenSettings(string uri) { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri) { UseShellExecute = true }); } catch (Exception ex) { EvidenceText.Text = $"Could not open Windows settings: {ex.Message}"; } }
     private async void Scan_Click(object sender, RoutedEventArgs e) { ScanButton.IsEnabled = false; SummaryText.Text = "Inspecting system…"; EvidenceText.Text = "Reading evidence without changing settings."; try { findings = await Task.Run(OpenFixEngine.Scan); FindingsList.ItemsSource = findings.Select(f => $"{(f.Level == FindingLevel.Good ? "✓" : "!")}  {f.Title}\n    {f.Explanation}\n    Evidence: {f.Evidence}").ToArray(); var attention = findings.Count(f => f.Level != FindingLevel.Good); SummaryText.Text = attention == 0 ? "Your system looks healthy" : $"{attention} item(s) need review"; CountText.Text = $"{findings.Count} checks · {attention} requiring attention"; EvidenceText.Text = "Scan complete · no changes were applied."; ReportButton.IsEnabled = true; } catch (Exception ex) { SummaryText.Text = "Scan could not complete"; EvidenceText.Text = ex.Message; } finally { ScanButton.IsEnabled = true; } }
-    private void Report_Click(object sender, RoutedEventArgs e) { if (findings.Count == 0) return; using var dialog = new System.Windows.Forms.SaveFileDialog { Filter = "OpenFix report (*.json)|*.json", FileName = "openfix-report.json" }; if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK) File.WriteAllText(dialog.FileName, JsonSerializer.Serialize(findings, new JsonSerializerOptions { WriteIndented = true })); }
+    private void Report_Click(object sender, RoutedEventArgs e) { if (findings.Count == 0) return; using var dialog = new System.Windows.Forms.SaveFileDialog { Filter = "OpenFix support bundle (*.zip)|*.zip", FileName = $"openfix-support-{DateTime.Now:yyyyMMdd-HHmm}.zip" }; if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK) { try { var result = SupportBundle.Export(dialog.FileName, findings); EvidenceText.Text = $"Support bundle saved · {result.SizeBytes / 1024d:0.0} KB · SHA-256 {result.Sha256[..12]}…"; } catch (Exception ex) { EvidenceText.Text = $"Could not export support bundle: {ex.Message}"; } } }
+    protected override void OnContentRendered(EventArgs e) { base.OnContentRendered(e); UpdateVersionLabel(this); }
+    private static void UpdateVersionLabel(System.Windows.DependencyObject parent)
+    {
+        for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+            if (child is System.Windows.Controls.TextBlock text && text.Text.StartsWith("OpenFix 0.1.0", StringComparison.Ordinal)) text.Text = "OpenFix 1.0.0 · MIT licensed · Not affiliated with Microsoft or Windows";
+            UpdateVersionLabel(child);
+        }
+    }
 }
