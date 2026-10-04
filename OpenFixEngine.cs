@@ -28,8 +28,12 @@ public static class OpenFixEngine
         {
             var info = new ProcessStartInfo { FileName = "cscript.exe", Arguments = $"//Nologo \"{Environment.SystemDirectory}\\slmgr.vbs\" /xpr", UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
             using var process = Process.Start(info); if (process is null) return (false, "Could not start the official Windows licensing script.");
-            if (!process.WaitForExit(4000)) { try { process.Kill(true); } catch { } return (false, "Activation status check timed out."); }
-            var output = (process.StandardOutput.ReadToEnd() + " " + process.StandardError.ReadToEnd()).Trim();
+            // Drain both redirected streams while the process runs. Waiting first can
+            // deadlock if cscript fills either pipe before exiting.
+            var stdout = process.StandardOutput.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(4000)) { try { process.Kill(true); } catch { } process.WaitForExit(); return (false, "Activation status check timed out."); }
+            var output = (stdout.GetAwaiter().GetResult() + " " + stderr.GetAwaiter().GetResult()).Trim();
             var active = output.Contains("permanently activated", StringComparison.OrdinalIgnoreCase) || output.Contains("permanently activated.", StringComparison.OrdinalIgnoreCase);
             return (active, string.IsNullOrWhiteSpace(output) ? $"slmgr.vbs exited with code {process.ExitCode}" : output.Replace(Environment.NewLine, " "));
         }
@@ -39,10 +43,17 @@ public static class OpenFixEngine
     private static long MeasureTempBytes(string root)
     {
         if (!Directory.Exists(root)) return 0;
-        try { return Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Select(SafeLength).Sum(); }
-        catch
+        long total = 0;
+        var pending = new Stack<string>();
+        pending.Push(root);
+        while (pending.Count > 0)
         {
-            long total = 0; try { foreach (var file in Directory.EnumerateFiles(root)) total += SafeLength(file); foreach (var child in Directory.EnumerateDirectories(root)) total += MeasureTempBytes(child); } catch { } return total;
+            var directory = pending.Pop();
+            try { foreach (var file in Directory.EnumerateFiles(directory)) total = SaturatingAdd(total, SafeLength(file)); } catch { }
+            try { foreach (var child in Directory.EnumerateDirectories(directory)) pending.Push(child); } catch { }
         }
+        return total;
     }
+    internal static long MeasureTempBytesForTesting(string root) => MeasureTempBytes(root);
+    private static long SaturatingAdd(long total, long value) => value > long.MaxValue - total ? long.MaxValue : total + value;
 }
